@@ -1,3 +1,11 @@
+/**
+ * OrderBook — 实时订单簿组件（买卖盘深度）
+ *
+ * 每 2 秒直接调用 OKX REST API 获取 BTC-USDT 8档买卖盘数据。
+ * 以背景深度条形直观展示各档位成交量占比。
+ * 卖盘（asks）升序排列，UI 上反转显示（最低卖价靠近中间买价区域）。
+ * 买盘（bids）降序排列。
+ */
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -14,7 +22,8 @@ export default function OrderBook() {
   useEffect(() => {
     const fetchDepth = async () => {
       try {
-        // OKX order book: asks/bids 各 [price, size, liquidated_orders, orders_count]
+        // OKX 订单簿接口：asks/bids 各字段为 [price, size, liquidated_orders, orders_count]
+        // sz=8 表示获取 8 档买卖盘
         const res = await fetch('https://www.okx.com/api/v5/market/books?instId=BTC-USDT&sz=8');
         const json = await res.json();
         if (json.code !== '0' || !json.data?.[0]) return;
@@ -26,10 +35,12 @@ export default function OrderBook() {
     };
 
     fetchDepth();
+    // 每 2 秒刷新一次订单簿深度
     const timer = globalThis.setInterval(fetchDepth, 2000);
     return () => globalThis.clearInterval(timer);
   }, []);
 
+  // 取所有档位中最大成交量，用于计算各档位深度条宽度百分比
   const maxQty = Math.max(...[...asks, ...bids].map((e) => e.quantity), 1);
 
   return (

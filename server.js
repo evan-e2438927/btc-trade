@@ -1,3 +1,14 @@
+/**
+ * server.js — 自定义 HTTP 服务器入口
+ *
+ * 职责：
+ * 1. 启动 Next.js 应用并代理所有 HTTP 请求
+ * 2. 通过 OKX WebSocket 实时订阅 BTC-USDT 行情，写入内存价格存储
+ * 3. 初始化 PostgreSQL 连接池
+ * 4. 每 500ms 扫描一次挂单，触发限价/止损/止盈成交逻辑
+ *
+ * 启动方式：NODE_ENV=production PORT=3002 node server.js
+ */
 const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
@@ -27,6 +38,11 @@ let pingInterval = null;
 let orderCheckInterval = null;
 let pool = null;
 
+/**
+ * 连接 OKX 公共 WebSocket，订阅 BTC-USDT 实时 Ticker。
+ * 断线后自动 5 秒重连；每 20 秒发送 ping 维持心跳。
+ * 收到行情数据后写入 memPriceStore，由 API Routes 轮询读取。
+ */
 function connectOKX() {
   console.log('[OKX] 连接 WebSocket:', OKX_WS);
   okxWs = new WebSocket(OKX_WS);
@@ -77,6 +93,10 @@ function connectOKX() {
   });
 }
 
+/**
+ * 初始化 PostgreSQL 连接池。
+ * 在 app.prepare()（Next.js 编译完成）后调用，确保 .env 环境变量已加载。
+ */
 async function initDb() {
   const { Pool } = require('pg');
   pool = new Pool({
@@ -89,21 +109,31 @@ async function initDb() {
   console.log('[DB] 数据库连接池已初始化');
 }
 
+/**
+ * 订单触发引擎（每 500ms 调用一次）
+ *
+ * 扫描所有 status='pending' 的挂单，判断是否满足成交条件：
+ * - 限价单：买单当前价 <= 委托价 / 卖单当前价 >= 委托价
+ * - 止损单：当前价 <= 止损触发价
+ * - 止盈单：当前价 >= 止盈触发价
+ * 成交后调用 fillOrderInEngine，并为母单创建止损/止盈平仓子单。
+ * 最后更新 BTCUSDT 持仓的浮动盈亏。
+ */
 async function checkPendingOrders() {
   const currentPrice = memPriceStore.getPrice();
-  if (!currentPrice || !pool) return;
+  if (!currentPrice || !pool) return; // 价格未就绪或 DB 未初始化则跳过
 
   try {
     const res = await pool.query(`SELECT * FROM orders WHERE status = 'pending'`);
     for (const order of res.rows) {
-      let qty = Number(order.quantity);  // let，允许止损/止盈时修改数量
+      let qty = Number(order.quantity);  // let，允许止损/止盈触发时修改平仓数量
       const limitPrice = order.price ? Number(order.price) : null;
       const stopPrice = order.stop_price ? Number(order.stop_price) : null;
       const takeProfitPrice = order.take_profit_price ? Number(order.take_profit_price) : null;
 
       let shouldFill = false;
       let fillPrice = currentPrice;
-      let filledBySLTP = false;  // 是否由止损/止盈触发（非限价成交）
+      let filledBySLTP = false;  // 是否由止损/止盈触发（与常规限价单成交区分）
 
       // 限价单触发
       if (order.type === 'limit') {
@@ -195,8 +225,18 @@ async function checkPendingOrders() {
   }
 }
 
+/**
+ * 执行订单成交（原子性更新账户、持仓、订单、成交记录）
+ * @param {number} orderId   - 订单 ID
+ * @param {string} side      - 方向：'buy' | 'sell'
+ * @param {number} quantity  - 成交数量（BTC）
+ * @param {number} fillPrice - 成交价格（USDT）
+ *
+ * 买入流程：解冻 USDT → 增加 BTC 可用余额 → 更新持仓均价
+ * 卖出流程：解冻 BTC  → 增加 USDT 可用余额 → 减少持仓（归零时清空均价）
+ */
 async function fillOrderInEngine(orderId, side, quantity, fillPrice) {
-  const cost = quantity * fillPrice;
+  const cost = quantity * fillPrice; // 总成交额（USDT）
 
   if (side === 'buy') {
     await pool.query(

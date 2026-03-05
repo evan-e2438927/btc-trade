@@ -1,3 +1,10 @@
+/**
+ * AccountBar — 顶部账户信息栏
+ *
+ * 水平展示总资产、USDT 可用/冻结余额、BTC 持仓量和浮动盈亏。
+ * 数据由父组件（page.tsx）每 3 秒轮询 /api/account 和 /api/positions 后传入。
+ * 总资产 = USDT 可用 + USDT 冻结 + BTC总量 × 当前价格
+ */
 'use client';
 
 interface AccountData {
@@ -24,7 +31,9 @@ interface Props {
 
 export default function AccountBar({ account, ticker, position }: Props) {
   const btcPrice = ticker.price;
+  // BTC 总量（可用 + 冻结）× 当前价格 = BTC 折算 USDT 价值
   const btcValue = (account.btc.available + account.btc.frozen) * btcPrice;
+  // 总资产 = USDT 总量 + BTC 折算价值
   const totalAsset = account.usdt.available + account.usdt.frozen + btcValue;
   const pnl = position ? Number(position.unrealized_pnl) : 0;
   const isPositive = pnl >= 0;

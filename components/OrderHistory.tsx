@@ -1,3 +1,10 @@
+/**
+ * OrderHistory — 订单历史列表组件
+ *
+ * 以表格形式展示最近 50 条订单（挂单中/已成交/已撤销）。
+ * 对于平仓子单（is_close_order=true）在 ID 后标注 [平] 标识，便于区分止损/止盈子单。
+ * 挂单状态下提供撤单按钮，点击后调用父组件传入的 onCancel 回调。
+ */
 'use client';
 
 interface Order {

@@ -1,3 +1,10 @@
+/**
+ * PositionList — 当前持仓展示组件
+ *
+ * 展示 BTCUSDT 持仓的数量、开仓均价、当前价、浮动盈亏和收益率（ROE）。
+ * position 和 currentPrice 由父组件传入（每 3s 轮询更新）。
+ * ROE（收益率）= (currentPrice - entryPrice) / entryPrice × 100%
+ */
 'use client';
 
 interface Position {
@@ -16,6 +23,7 @@ export default function PositionList({ position, currentPrice }: Props) {
   const qty = position ? Number(position.quantity) : 0;
   const entryPrice = position ? Number(position.entry_price) : 0;
   const pnl = position ? Number(position.unrealized_pnl) : 0;
+  // 仅在有持仓且开仓均价 > 0 时计算收益率，避免除零错误
   const roe = qty > 0 && entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
 
   return (

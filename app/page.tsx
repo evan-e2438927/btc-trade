@@ -1,3 +1,16 @@
+/**
+ * page.tsx — 交易主页面（根 Client 组件）
+ *
+ * 数据轮询策略：
+ * - 账户/持仓/订单：每 3 秒调用 /api/account、/api/positions、/api/orders
+ * - 行情 Ticker：每 2 秒调用 /api/ticker（由 server.js OKX WebSocket 维护）
+ *
+ * 布局：
+ * ┌────────────────────── 顶部账户栏 ──────────────────────┐
+ * │  左侧：K 线图                          │ 右侧：交易面板 │
+ * │  ── 底部标签面板（订单簿/持仓/订单记录） │                  │
+ * └────────────────────────────────────────────────────┘
+ */
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -43,6 +56,7 @@ interface Order {
   created_at: string;
 }
 
+// 账户数据默认值（避免 undefined 访问报错）
 const DEFAULT_ACCOUNT: AccountData = {
   usdt: { available: 0, frozen: 0 },
   btc: { available: 0, frozen: 0 },
@@ -56,9 +70,11 @@ const DEFAULT_TICKER: TickerData = {
   volume24h: 0,
 };
 
+// 底部面板标签类型
 type BottomTab = 'orderbook' | 'positions' | 'orders';
 
 export default function TradingPage() {
+  // ── 状态管理 ──────────────────────────────────────────────────────
   const [account, setAccount] = useState<AccountData>(DEFAULT_ACCOUNT);
   const [ticker, setTicker] = useState<TickerData>(DEFAULT_TICKER);
   const [position, setPosition] = useState<Position | null>(null);
@@ -66,6 +82,7 @@ export default function TradingPage() {
   const [bottomTab, setBottomTab] = useState<BottomTab>('positions');
   const [livePrice, setLivePrice] = useState(0);
 
+  // ── 数据获取函数（useCallback 缓存，避免 useEffect 依赖变化导致重复注册定时器）
   const fetchAccount = useCallback(async () => {
     try {
       const res = await fetch('/api/account');
@@ -95,19 +112,21 @@ export default function TradingPage() {
     } catch { /* ignore */ }
   }, []);
 
+  // 一次性刷新账户、持仓和订单（供 refreshAll 定时器和下单后主动调用）
   const refreshAll = useCallback(() => {
     fetchAccount();
     fetchPosition();
     fetchOrders();
   }, [fetchAccount, fetchPosition, fetchOrders]);
 
+  // 初始化并启动账户/持仓/订单 3 秒轮询
   useEffect(() => {
     refreshAll();
     const timer = setInterval(refreshAll, 3000);
     return () => clearInterval(timer);
   }, [refreshAll]);
 
-  // 从 /api/ticker（由 server.js REST 轮询维护）获取实时 ticker
+  // 从 /api/ticker（由 server.js OKX WebSocket 维护）获取实时 Ticker，每 2 秒一次
   useEffect(() => {
     const fetchTicker = async () => {
       try {
@@ -124,12 +143,14 @@ export default function TradingPage() {
     return () => clearInterval(t);
   }, []);
 
+  // 撤单：调用 DELETE API，完成后刷新订单列表和账户余额
   const handleCancel = async (orderId: number) => {
     await fetch(`/api/orders/${orderId}`, { method: 'DELETE' });
     fetchOrders();
     fetchAccount();
   };
 
+  // 当前价格优先使用 livePrice（ticker 轮询），回退到上次 ticker 中的 price
   const currentPrice = livePrice || ticker.price;
 
   return (

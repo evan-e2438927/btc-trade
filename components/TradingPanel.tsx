@@ -1,22 +1,36 @@
+/**
+ * TradingPanel — 右侧交易下单面板
+ *
+ * 功能：
+ * - 支持买入/卖出方向切换
+ * - 支持市价单和限价单
+ * - BTC 数量与 USDT 金额实时联动（双向绑定）
+ * - 支持快速选择仓位比例（25% / 50% / 75% / 100%）
+ * - 可选止损（Stop Loss）和止盈（Take Profit）子面板
+ *   - 止损/止盈各自支持市价或限价委托方式
+ * - 下单前本地校验，失败时展示错误提示
+ * - 下单成功后清空表单并通知父组件刷新数据
+ */
 'use client';
 
 import { useState, useCallback } from 'react';
 
 interface Props {
   ticker: { price: number; changePercent: number };
-  usdtBalance: number;
-  btcBalance: number;
-  onOrderPlaced: () => void;
+  usdtBalance: number;   // 可用 USDT 余额（用于买入上限校验）
+  btcBalance: number;    // 可用 BTC 余额（用于卖出上限校验）
+  onOrderPlaced: () => void; // 下单成功后的回调，通知父组件刷新账户/持仓/订单
 }
 
 type SLTPType = 'market' | 'limit';
 
+// 止损/止盈子面板的状态结构
 interface SLTPState {
   enabled: boolean;
   type: SLTPType;
   trigger: string;      // 触发价格 (USDT)
-  orderPrice: string;   // 委托价格 (USDT)，仅限价时
-  quantity: string;     // 数量 (BTC)
+  orderPrice: string;   // 委托价格 (USDT)，仅限价时生效
+  quantity: string;     // 平仓数量 (BTC)
 }
 
 const defaultSLTP = (): SLTPState => ({
@@ -36,9 +50,10 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
+  // 附加订单成交的执行价格：市价单用当前价，限价单用输入价
   const execPrice = type === 'market' ? ticker.price : (Number(limitPrice) || ticker.price);
 
-  // BTC 变化 → 联动 USDT
+  // BTC 数量变化 → 自动计算并更新 USDT 金额
   const handleBtcChange = useCallback((val: string) => {
     setBtcQty(val);
     const n = parseFloat(val);
@@ -46,7 +61,7 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
     else setUsdtAmt('');
   }, [execPrice]);
 
-  // USDT 变化 → 联动 BTC
+  // USDT 金额变化 → 自动计算并更新 BTC 数量
   const handleUsdtChange = useCallback((val: string) => {
     setUsdtAmt(val);
     const n = parseFloat(val);
@@ -54,7 +69,7 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
     else setBtcQty('');
   }, [execPrice]);
 
-  // 切换限价/市价时重新联动
+  // 切换限价/市价时，以 BTC 数量为准重新计算 USDT，避免金额显示错误
   const handleTypeChange = (t: 'market' | 'limit') => {
     setType(t);
     // 以 BTC 数量为准重新计算 USDT
@@ -63,7 +78,7 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
     if (!isNaN(qty) && p > 0) setUsdtAmt((qty * p).toFixed(2));
   };
 
-  // 限价变化时重新联动
+  // 限价价格变化时，以当前 BTC 数量重新计算 USDT
   const handleLimitPriceChange = (val: string) => {
     setLimitPrice(val);
     const p = parseFloat(val);
@@ -71,6 +86,7 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
     if (!isNaN(p) && !isNaN(qty) && p > 0) setUsdtAmt((qty * p).toFixed(2));
   };
 
+  // 快速比例按钮：按可用余额的百分比自动填写数量
   const handlePercentage = (pct: number) => {
     if (side === 'buy') {
       const usdt = usdtBalance * pct;
@@ -86,6 +102,7 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
   const updateSl = (patch: Partial<SLTPState>) => setSl(s => ({ ...s, ...patch }));
   const updateTp = (patch: Partial<SLTPState>) => setTp(s => ({ ...s, ...patch }));
 
+  // 下单前本地校验，返回错误文本或 null（通过）
   const validate = () => {
     const qty = Number(btcQty);
     if (!qty || qty <= 0) return '请输入有效的 BTC 数量';
@@ -104,6 +121,7 @@ export default function TradingPanel({ ticker, usdtBalance, btcBalance, onOrderP
   };
 
   const handleSubmit = async () => {
+    // 本地校验失败则不提交请求
     const err = validate();
     if (err) { setMessage({ text: err, ok: false }); return; }
 
