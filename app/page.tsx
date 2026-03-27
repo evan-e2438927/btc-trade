@@ -154,7 +154,7 @@ export default function TradingPage() {
   const currentPrice = livePrice || ticker.price;
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 overflow-hidden">
+    <div className="flex flex-col h-screen bg-black overflow-hidden">
       {/* 顶部账户栏 */}
       <AccountBar account={account} ticker={ticker} position={position} />
 
