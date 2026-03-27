@@ -20,8 +20,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      {/* antialiased: 字体抗锯齿；bg-gray-950: 深色背景；overflow-hidden: 禁止页面滚动条 */}
-      <body className="antialiased bg-gray-950 text-white overflow-hidden">
+      {/* antialiased: 字体抗锯齿；bg-black: 纯黑背景；overflow-hidden: 禁止页面滚动条 */}
+      <body className="antialiased bg-black text-white overflow-hidden">
         {children}
       </body>
     </html>
